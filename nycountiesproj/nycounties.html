@@ -1,0 +1,184 @@
+<!-- New York Counties -->
+<!DOCTYPE html>
+<meta charset="utf-8">
+<body>
+<style>
+path{
+  
+  stroke-width:2px;
+  stroke:#000;
+}
+svg{
+  float:left;
+}
+div{overflow:hidden;}
+table{
+  padding:5px;
+  margin-right:10px;
+  border-spacing:0px;
+  border-radius:25px;
+}
+td{
+  padding:5px;
+}
+tbody tr{
+  padding:0px;
+  margin:0px;
+}
+
+thead tr{
+  background-color:#3366ff; 
+}
+
+</style>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="http://d3js.org/topojson.v1.min.js"></script>
+<script src="helpers.js"></script>
+<script>
+
+//getting      T occupancy     total         total        own gchild   own gchild pp  own gchild npp
+var censusVars = ['B25002_002E','B10001_001E','B10002_001E','B10002_002E','B10002_003E','B10002_004E','B10002_005E'];
+var displayType = ['COUNT','DENSITY'];
+var censusData = [];
+var width = 960,
+    height = 700;
+
+
+
+var colorRange = ["#fff7ec", "#fee8c8", "#fdd49e", "#fdbb84", "#fc8d59", "#ef6548", "#d7301f", "#b30000", "#7f0000"];
+
+var projection = d3.geo.mercator()
+            .center([-75.819, 42.795])
+            .scale(6.5 * width)
+            .translate([width/2,height/2]);
+
+var path = d3.geo.path()
+    .projection(projection);
+
+var maptype=0;
+var selectedIndex = 1;
+
+
+function buildOptions(){
+  d3.select('body').append('div').attr("id","varSelect").style('');
+  d3.select('body').append('div').attr("id","typeSelect").style('');
+
+  var variables = [1,2,3,4,5],
+    select = d3.select("#varSelect").append('select').on('change',function(d){
+      selectedIndex = parseInt(this.value);
+      repaintMap(maptype);
+    }),
+    options = select.selectAll('option').data(variables);
+
+    options.enter().append("option")
+      .attr('value',function(d) { return d })
+      .text(function(d) { return censusVars[d]; });
+
+var maptypes = [0,1],
+  selecttype = d3.select("#typeSelect").append('select').on('change',function(d){
+    maptype = parseInt(this.value);
+    repaintMap(maptype);
+  }),
+  typeoptions = selecttype.selectAll('option').data(maptypes);
+  typeoptions.enter().append('option')
+    .attr('value',function(d) {return d})
+    .text(function(d){return displayType[d]});
+
+}
+
+var totalOccupancy =0; //the index for the occupancy data
+var mapping; //our color map function
+var color; //this will hold our colorMapping function once we have gotten our data;
+
+
+var drawGraph = function(censusData){ 
+
+
+  var svg = d3.select("body").append("svg")
+      .attr("width", width)
+      .attr("height", height);
+
+  d3.json("ny.json", function(error, ny) {
+    if (error) return console.error(error);
+
+    svg.selectAll("path")
+      .data(topojson.feature(ny,ny.objects.tracts).features)
+      .enter().append("path")
+        .attr("id",function(d){return 'zone'+d.properties.geoid;})
+        .attr("d", path)
+        .attr('fill',function(d){
+
+           return color(mapping(maptype,censusData,d.properties.geoid)
+              // censusData[d.properties.geoid][selectedIndex]
+            );
+        });
+        d3.select('body').append('div').attr("id","colorKey");
+        list = color.quantiles();
+        labelList = buildLegend(list,maptype);
+        d3.select("#colorKey").selectAll('div').data(colorRange).enter().append('div')
+                .attr("id",function(d){ return d})
+                .style({'height':"30px",'width':"150px",'margin':'5px','float':'none'})
+                .style('background-color',function(d){return d;})
+                .text(function(d,i){return labelList[i];});
+        buildOptions();
+        drawTable(censusData);
+        afterFunctions();
+  });
+}
+
+function afterFunctions(){
+  //set table behavior
+  d3.selectAll("#dataTable tr").on("click",function(d){
+                var id = d[0];          
+                var path = d3.select("#zone"+id);
+                d3.selectAll("body path").style("stroke-width",'2px');
+                path.style("stroke-width","7px"); 
+                var rows =  d3.selectAll("#dataTable tr").style("background-color",function(d,i){ return (i%2==0)? "#6699ff":"#6677ff"})
+                d3.select("#row"+id).transition().style("background-color","#ff3300");
+              });  
+}
+
+function repaintMap(maptype){
+ 
+  color = getColorMapping(); //update the color mapping function to our current data
+  list = color.quantiles();
+  labelList = buildLegend(list,maptype);
+  d3.select("#colorKey").selectAll("div").text(function(d,i){return labelList[i];});
+  paths = d3.selectAll("path")
+  paths.attr('fill',function(sel){ 
+    return color(mapping(maptype,censusData,sel.properties.geoid));
+  });
+}
+function getCensusData(cb){
+  var dataset = 'acs5',
+      datayear = '2012';
+  var url = 'http://api.census.gov/data/'+datayear+'/'+dataset+
+      '?key=564db01afc848ec153fa77408ed72cad68191211'+
+      '&get='+censusVars.join()+
+      '&for=county:*&in=state:36';
+  var output = {};
+  d3.json(url,function(err,data){
+    
+    data.forEach(function(data,index){
+      var fips = data.splice(data.length-2,2)
+      if(index > 0){
+        output[fips[0]+fips[1]] = data;
+      }
+    })
+    censusData = output;
+    console.log(output);
+    cb(output)
+    color = getColorMapping();
+  });
+}
+
+getCensusData(drawGraph);
+
+d3.select("body").append("a")
+                  .attr("href","http://localhost/dvtest/nycountiesproj/nytracts.html")
+                  .text("GOTO TRACTS")
+
+
+
+
+</script>
